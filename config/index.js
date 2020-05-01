@@ -1,5 +1,5 @@
 module.exports = {
-  port: 8080,
+  port: 9001,
   dbURL: 'mongodb://localhost/ktieos',
   dbName: "ktieos",
   host: "http://localhost",
