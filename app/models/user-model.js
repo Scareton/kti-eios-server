@@ -9,12 +9,12 @@ let UserSchema = new mongoose.Schema({
   },
   name: {
     type: String,
-    unique: [true, "nameRequired"],
+    required: [true, "nameRequired"],
     trim: true
   },
   surname: {
     type: String,
-    unique: [true, "surnameRequired"],
+    required: [true, "surnameRequired"],
     trim: true
   },
   patronymic: {
@@ -27,7 +27,7 @@ let UserSchema = new mongoose.Schema({
     maxlength: [32, "tooLong"],
     minlength: [4, "tooShort"],
     match: [/^[a-zA-Z0-9]+$/, "usernameIncorrect"],
-    unique: [true, "usernameRequired"]
+    unique: [true, "usernameUnique"]
   },
   password: {
     type: String,

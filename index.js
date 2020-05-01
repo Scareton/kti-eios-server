@@ -84,7 +84,6 @@ passport.use(new LocalStrategy(
 ));
 
 function mustAuthenticated(req, res, next) {
-  console.log(req.session)
   if (!req.isAuthenticated()) {
     return res.status(401).send();
   }
@@ -114,17 +113,16 @@ app.post('/api/users/login', passport.authenticate('local'), (req, res) => {
   res.send(getUserSafeBody(req.user))
 })
 
+app.get('/api/users/logout', (req, res) => {
+  req.logout();
+  res.send();
+});
+
 app.get('/api/users/refresh-session', mustAuthenticated, (req, res) => {
   res.send(getUserSafeBody(req.user))
 })
 
-app.get("/api/courses", mustAuthenticated, (req, res) => {
-  res.send({
-    courses: 1
-  })
-})
+module.exports.mustAuthenticated = mustAuthenticated;
+module.exports.app = app;
 
-app.get('/api/testCookie', (req,res) => {
-  res.cookie("test", "123");
-  res.json({ok: true});
-});
+require('./app/routes/courses')
