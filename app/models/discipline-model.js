@@ -1,6 +1,6 @@
 let mongoose = require('mongoose');
 
-let LevelSchema = new mongoose.Schema({
+let DisciplineSchema = new mongoose.Schema({
   name: {
     $type: String,
     required: [true, "nameRequired"],
@@ -9,16 +9,13 @@ let LevelSchema = new mongoose.Schema({
     $type: String,
     required: [true, "aliasRequired"],
   },
-  abbreviation: {
-    $type: String,
-  },
   type: {
     $type: String,
-    default: "level",
+    default: "discipline",
     immutable: true
   }
 }, { typeKey: '$type' });
 
-let Level = mongoose.model('Level', LevelSchema);
+let Discipline = mongoose.model('Discipline', DisciplineSchema);
 
-module.exports = Level;
+module.exports = Discipline;

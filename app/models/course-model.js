@@ -19,11 +19,11 @@ let CourseSchema = new mongoose.Schema({
     ref: 'Level',
     required: [true, "levelRequired"]
   },
-  category: {
-    type: mongoose.Types.ObjectId,
-    ref: 'Category',
-    required: [true, "categoryRequired"]
-  },
+  // category: {
+  //   type: mongoose.Types.ObjectId,
+  //   ref: 'Category',
+  //   required: [true, "categoryRequired"]
+  // },
   discipline: {
     type: mongoose.Types.ObjectId,
     ref: 'Discipline',
