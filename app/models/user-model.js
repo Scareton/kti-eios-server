@@ -57,6 +57,16 @@ let UserSchema = new mongoose.Schema({
         type: String,
         required: [true, "specialityUrlRequired"]
       }
+    },
+    group: {
+      name: {
+        type: String,
+        required: [true, "studentGroupNameRequired"]
+      },
+      alias: {
+        type: String,
+        required: [true, "studentGroupAliasRequired"]
+      }
     }
   },
   teacher: {
