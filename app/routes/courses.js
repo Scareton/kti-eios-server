@@ -9,6 +9,9 @@ const FacultyModel = require("../models/faculty-model")
 const InstituteModel = require("../models/institute-model")
 const DisciplineModel = require("../models/discipline-model")
 
+/**
+ * Получить список курсов
+ */
 app.get("/api/courses", (req, res) => {
   CourseModel.aggregate([
     {
@@ -55,62 +58,106 @@ app.get("/api/courses", (req, res) => {
   })
 })
 
-function checkContentRequirments(req, res, creq, course) {
+/**
+ * Проверить требования для получения секции или вложения
+ */
+function checkElementRequirments(element, parent, user, type) {
   return new Promise((resolve, reject) => {
-    // Обработка условия типа "Завершённый этап"
-    if (creq.type === "finished") {
-      let target = course.content.find(item => item._id.equals(creq.target))
-      let targetUser = target.students.find(item => item._id.equals(req.user._id))
-
-      // Если во вложении для заданного пользователя статус установлен в "Завершено"
-      // Передаём вложение
-      if (targetUser.s === 3) resolve();
-      else reject();
+    // Проверка, есть ли у элемента требования
+    if (element.req[0]) {
+      element.req.forEach(requirment => {
+        // Тип требования - завершить работу с другим элементом
+        if (requirment.type === "finished") {
+          // Найти цель, на которую ссылается требование 
+          let target = parent[type].find(item => item._id.equals(requirment.target))
+          // Найти текущего пользователя в списке пользователей цели
+          let targetStudent = target.students.find(item => item._id.equals(user._id))
+          // Если пользователь найден в списке
+          if (targetStudent !== undefined) {
+            // Проверить статус пользователя для элемента-цели
+            if (targetStudent.s !== 3) resolve(false)
+          }
+          // Если пользователь не найден в списке - отклонить элемент
+          else resolve(false)
+        }
+        // Если тип требования неизвестен - отклонить элемент
+        else resolve(false)
+      });
+      // Если перебор прошёл успешно - вернуть элемент
+      resolve(true);
     }
-    // Если тип не известен
-    else reject();
+    // Если у элемента нет требований - вернуть элемент
+    else resolve(true);
   })
 }
 
-app.get("/api/courses/:courseId", (req, res) => {
-  if (req.params.courseId) {
-    CourseModel.findOne({ _id: req.params.courseId }, (err, course) => {
-      if (!err && course !== null) {
-        new Promise(resolve => {
-          // Перебор вложений курса
-          course.content.forEach((content, i) => {
-            if (req.user) {
-              // Оставить в массиве студентов только текущего пользователя
-              content.students = content.students.filter(item => item._id.equals(req.user._id))
+async function checkRequirments(course, user) {
+  await Promise.all(course.sections.map(async (section, sectionIndex) => {
+    await checkElementRequirments(section, course, user, "sections")
+      .then(async (sectionResult) => {
+        console.log(sectionResult, `section ${section.name}`)
+        if (!sectionResult) course.sections.splice(sectionIndex, 1)
+        else {
+          await Promise.all(section.content.map(async (content, contentIndex) => {
+            await checkElementRequirments(content, section, user, "content")
+              .then(contentResult => {
+                console.log(contentResult, `content ${content.name}`)
+                if (!contentResult) section.content.splice(contentIndex, 1)
+              })
+          }))
+        }
+      });
+  }));
+}
 
-              // Если у вложения есть условия открытия
-              if (content.req[0]) {
-                content.req.forEach(creq => {
-                  checkContentRequirments(req, res, creq, course).catch(() => {
-                    course.content.splice(i, 1)
-                  })
-                });
-              }
-            } else {
-              // Вернуть пустой массив со студентами
-              content.students.length = 0;
-
-              // Если у вложения есть условия открытия
-              if (content.req[0]) {
-                course.content.splice(i, 1)
-              }
-            }
-          });
-          resolve();
-        }).then(() => {
-          res.send(course)
-        })
+/**
+ * Получение определённого курса.
+ * Задача - отправить курс, отфильтровав его секции и вложения 
+ * индивидуально для каждого пользователя
+ */
+app.get("/api/courses/get/:courseId", (req, res) => {
+  CourseModel.aggregate([
+    {
+      // Выбрать только курс с указанным _id
+      $match: {
+        _id: mongoose.Types.ObjectId(req.params.courseId)
       }
-      else res.status(500).send("Произошла ошибка во время получения курса")
-    })
-  } else {
-    res.status(404).send("Курс не найден")
-  }
+    },
+    {
+      $lookup: {
+        from: 'disciplines',
+        localField: 'discipline',
+        foreignField: '_id',
+        as: 'discipline'
+      }
+    },
+    {
+      $lookup: {
+        from: 'levels',
+        localField: 'level',
+        foreignField: '_id',
+        as: 'level'
+      }
+    },
+    {
+      $unwind: "$level"
+    },
+    {
+      $unwind: "$discipline"
+    }
+  ]).exec((err, courses) => {
+    // Аггрегация возвращает массив с одним элементом.
+    // Получить нужный курс, выбрав первый элемент массива
+    let course = courses[0];
+    if (!err && course) {
+      // Отфильтровать секции курса
+      checkRequirments(course, req.user).then(() => {
+        res.send(course)
+      })
+    } else res.status(404).send("Курс не найден")
+  })
+
+  // res.send("123")
 })
 
 /**
@@ -118,7 +165,7 @@ app.get("/api/courses/:courseId", (req, res) => {
  * @param {Number} status id статуса, который будет установлен
  */
 function changeUserStatusInCourseContent(req, res, status) {
-  CourseModel.findOne({ _id: req.params.courseId }, (err, course) => {
+  CourseModel.findOne({ "sections.content._id": req.params.contentId }, (err, course) => {
     if (!err && course !== null) {
       // Найти указанное вложение
       let content = course.content.find(item => item._id == req.params.contentId);
@@ -137,7 +184,7 @@ function changeUserStatusInCourseContent(req, res, status) {
 
       // Сохранить ресурс
       course.save(err => {
-        if (!err) res.redirect(`/api/courses/${req.params.courseId}`)
+        if (!err) res.redirect(`/api/courses/get/${req.params.courseId}`)
         else res.status(500).send("Ошибка при сохранении");
       })
 
@@ -146,10 +193,10 @@ function changeUserStatusInCourseContent(req, res, status) {
   })
 }
 
-app.post("/api/courses/:courseId/:contentId/watch", mustAuthenticated, (req, res) => {
+app.post("/api/courses/contents/:contentId/watch", mustAuthenticated, (req, res) => {
   changeUserStatusInCourseContent(req, res, 1)
 })
 
-app.post("/api/courses/:courseId/:contentId/finish", mustAuthenticated, (req, res) => {
+app.post("/api/courses/contents/:contentId/finish", mustAuthenticated, (req, res) => {
   changeUserStatusInCourseContent(req, res, 3)
 })

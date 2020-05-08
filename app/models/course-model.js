@@ -11,7 +11,7 @@ let ContentSchema = new mongoose.Schema({
     $type: String,
     required: [true, "typeRequired"],
   },
-  content: {
+  description: {
     $type: String,
     required: [true, "contentRequired"]
   },
@@ -40,6 +40,41 @@ let ContentSchema = new mongoose.Schema({
 }, { typeKey: '$type' })
 let Content = mongoose.model('Content', ContentSchema);
 
+// СЕКЦИЯ
+let SectionSchema = new mongoose.Schema({
+  name: {
+    $type: String,
+    required: [true, "nameRequired"],
+  },
+  description: {
+    $type: String
+  },
+  students: [
+    {
+      _id: {
+        $type: mongoose.Types.ObjectId,
+        required: [true, "studentIdRequired"]
+      },
+      s: {
+        $type: Number,
+        required: [true, "studentStatusRequired"]
+      }
+    }
+  ],
+  content: [ContentSchema],
+  req: [{
+    type: {
+      $type: String,
+      required: [true, "reqTypeRequired"]
+    },
+    target: {
+      $type: mongoose.Types.ObjectId,
+      required: [true, "reqTargetRequired"]
+    }
+  }]
+}, { typeKey: '$type' })
+let Section = mongoose.model('Section', SectionSchema);
+
 // КУРС
 let CourseSchema = new mongoose.Schema({
   name: {
@@ -67,7 +102,7 @@ let CourseSchema = new mongoose.Schema({
     default: "course",
     immutable: true
   },
-  content: [ContentSchema]
+  sections: [SectionSchema]
 }, { typeKey: '$type' });
 let Course = mongoose.model('Course', CourseSchema);
 
