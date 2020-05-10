@@ -66,21 +66,23 @@ function checkElementRequirments(element, parent, user, type) {
     // Проверка, есть ли у элемента требования
     if (element.req[0]) {
       element.req.forEach(requirment => {
-        // Тип требования - завершить работу с другим элементом
-        if (requirment.type === "finished") {
-          // Найти цель, на которую ссылается требование 
-          let target = parent[type].find(item => item._id.equals(requirment.target))
-          // Найти текущего пользователя в списке пользователей цели
-          let targetStudent = target.students.find(item => item._id.equals(user._id))
-          // Если пользователь найден в списке
-          if (targetStudent !== undefined) {
-            // Проверить статус пользователя для элемента-цели
-            if (targetStudent.s !== 3) resolve(false)
-          }
-          // Если пользователь не найден в списке - отклонить элемент
-          else resolve(false)
+        // Найти цель, на которую ссылается требование 
+        let target = parent[type].find(item => item._id.equals(requirment.target))
+        // Какой статус должен быть для выполнения требования
+        // Тип элемента - статус
+        let statuses = {
+          "sections": 6,
+          1: 1,
+          2: 5
         }
-        // Если тип требования неизвестен - отклонить элемент
+        // Найти текущего пользователя в списке пользователей цели
+        let targetStudent = target.students.find(item => item._id.equals(user._id))
+        // Если пользователь найден в списке
+        if (targetStudent !== undefined) {
+          // Проверить статус пользователя для элемента-цели
+          if (targetStudent.s !== statuses[target.type]) resolve(false)
+        }
+        // Если пользователь не найден в списке - отклонить элемент
         else resolve(false)
       });
       // Если перебор прошёл успешно - вернуть элемент
@@ -91,18 +93,28 @@ function checkElementRequirments(element, parent, user, type) {
   })
 }
 
+function createPreviewForBlockedElement(element) {
+  let preview = {
+    _id: element._id,
+    name: element.name,
+    students: element.students,
+    type: element.type,
+    blocked: true
+  }
+  if (element.description) preview.description = element.description;
+  return preview;
+}
+
 async function checkRequirments(course, user) {
   await Promise.all(course.sections.map(async (section, sectionIndex) => {
     await checkElementRequirments(section, course, user, "sections")
       .then(async (sectionResult) => {
-        console.log(sectionResult, `section ${section.name}`)
-        if (!sectionResult) course.sections.splice(sectionIndex, 1)
+        if (!sectionResult) course.sections[sectionIndex] = createPreviewForBlockedElement(section)
         else {
           await Promise.all(section.content.map(async (content, contentIndex) => {
             await checkElementRequirments(content, section, user, "content")
               .then(contentResult => {
-                console.log(contentResult, `content ${content.name}`)
-                if (!contentResult) section.content.splice(contentIndex, 1)
+                if (!contentResult) section.content[contentIndex] = createPreviewForBlockedElement(content)
               })
           }))
         }
@@ -151,9 +163,13 @@ app.get("/api/courses/get/:courseId", (req, res) => {
     let course = courses[0];
     if (!err && course) {
       // Отфильтровать секции курса
-      checkRequirments(course, req.user).then(() => {
+      if (req.user && req.user.role === 2) {
         res.send(course)
-      })
+      } else {
+        checkRequirments(course, req.user).then(() => {
+          res.send(course)
+        })
+      }
     } else res.status(404).send("Курс не найден")
   })
 
@@ -164,39 +180,64 @@ app.get("/api/courses/get/:courseId", (req, res) => {
  * Установить статус для вложения
  * @param {Number} status id статуса, который будет установлен
  */
-function changeUserStatusInCourseContent(req, res, status) {
+function changeUserStatusInCourseContent(req, res) {
+  let status = req.body.status;
   CourseModel.findOne({ "sections.content._id": req.params.contentId }, (err, course) => {
     if (!err && course !== null) {
       // Найти указанное вложение
-      let content = course.content.find(item => item._id == req.params.contentId);
+      let parentSection;
+      new Promise(resolve => {
+        course.sections.forEach(section => {
+          let content = section.content.find(item => item._id.equals(req.params.contentId));
+          if (content !== undefined) {
+            parentSection = section;
+            resolve(content)
+          }
+        })
+      }).then(content => {
+        // Проверить требования
+        checkElementRequirments(content, parentSection, req.user, "content").then(reqResult => {
+          if (reqResult) {
+            // Найти текущего пользователя во вложении
+            let studentInContent = content.students.find(item => item._id.equals(req.user._id));
 
-      // Найти текущего пользователя во вложении
-      let studentInContent = content.students.find(item => item._id.equals(req.user._id));
+            // Если пользователя нет в списке - добавить его и установить статус 1
+            if (studentInContent === undefined) {
+              content.students.push({ _id: new mongoose.Types.ObjectId(req.user._id), s: status })
+            }
+            // Если пользователь уже есть в списке - установить статус 1
+            else {
+              // Если существующий статус не выше устанавливаемого
+              if (studentInContent.s < status) {
+                studentInContent.s = status
+              }
+            }
 
-      // Если пользователя нет в списке - добавить его и установить статус 1
-      if (studentInContent === undefined) {
-        content.students.push({ _id: req.user._id, s: status })
-      }
-      // Если пользователь уже есть в списке - установить статус 1
-      else {
-        studentInContent.s = status
-      }
-
-      // Сохранить ресурс
-      course.save(err => {
-        if (!err) res.redirect(`/api/courses/get/${req.params.courseId}`)
-        else res.status(500).send("Ошибка при сохранении");
+            // Сохранить ресурс
+            course.save(err => {
+              if (!err) res.redirect(`/api/courses/get/${course._id}`)
+              else res.status(500).send("Ошибка при сохранении");
+            })
+          } else res.status(500).send("Не выполнены все условия")
+        })
       })
-
     }
     else res.status(404).send("Курс не найден")
   })
 }
 
-app.post("/api/courses/contents/:contentId/watch", mustAuthenticated, (req, res) => {
-  changeUserStatusInCourseContent(req, res, 1)
+app.post("/api/courses/contents/:contentId/status", mustAuthenticated, (req, res) => {
+  changeUserStatusInCourseContent(req, res)
 })
 
-app.post("/api/courses/contents/:contentId/finish", mustAuthenticated, (req, res) => {
-  changeUserStatusInCourseContent(req, res, 3)
+function updateUserStatusInCourseSection(req, res) {
+  CourseModel.findOne({ "sections._id": req.params.sectionId }, (err, course) => {
+    if (!err) {
+      console.log(course)
+    } else res.status(404).send("Курс не найден")
+  });
+}
+
+app.post("/api/courses/sections/:sectionId/update", mustAuthenticated, (req, res) => {
+  updateUserStatusInCourseSection(req, res)
 })

@@ -28,10 +28,6 @@ let ContentSchema = new mongoose.Schema({
     }
   ],
   req: [{
-    type: {
-      $type: String,
-      required: [true, "reqTypeRequired"]
-    },
     target: {
       $type: mongoose.Types.ObjectId,
       required: [true, "reqTargetRequired"]
@@ -63,10 +59,6 @@ let SectionSchema = new mongoose.Schema({
   ],
   content: [ContentSchema],
   req: [{
-    type: {
-      $type: String,
-      required: [true, "reqTypeRequired"]
-    },
     target: {
       $type: mongoose.Types.ObjectId,
       required: [true, "reqTargetRequired"]
