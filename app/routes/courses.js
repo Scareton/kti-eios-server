@@ -25,17 +25,6 @@ let targetStatuses = {
 app.get("/api/courses", (req, res) => {
   CourseModel.aggregate([
     {
-      $project: {
-        _id: 1,
-        name: 1,
-        availability: 1,
-        description: 1,
-        level: 1,
-        discipline: 1,
-        type: 1
-      }
-    },
-    {
       $lookup: {
         from: 'disciplines',
         localField: 'discipline',
@@ -58,13 +47,30 @@ app.get("/api/courses", (req, res) => {
       $unwind: "$discipline"
     }
   ]).exec((err, courses) => {
-    if (!err) {
-      res.send(courses)
-    }
-    else {
-      console.log(err)
-      res.status(500).send("Произошла ошибка при получении курсов")
-    }
+    // Аггрегация возвращает массив с одним элементом.
+    // Получить нужный курс, выбрав первый элемент массива
+    if (!err && courses[0]) {
+      let filtered = [];
+
+      checkCourseArrayRequirments(courses, req.user).then(() => {
+        res.send(courses)
+      })
+
+
+      // courses.forEach(course => {
+      //   // Отфильтровать секции курса
+      //   if (req.user && req.user.role === 2) {
+      //     console.log("push")
+      //     filtered.push(course)
+      //   } else {
+      //     checkRequirments(course, req.user).then(() => {
+      //       console.log("push req")
+      //       filtered.push(course)
+      //     })
+      //   }
+      // })
+
+    } else res.status(404).send("Курс не найден")
   })
 })
 
@@ -106,6 +112,7 @@ function createPreviewForBlockedElement(element) {
     blocked: true
   }
   if (element.description) preview.description = element.description;
+  if (element.deadline) preview.deadline = element.deadline;
   return preview;
 }
 
@@ -113,17 +120,23 @@ async function checkRequirments(course, user) {
   await Promise.all(course.sections.map(async (section, sectionIndex) => {
     await checkElementRequirments(section, course, user, "sections")
       .then(async (sectionResult) => {
-        if (!sectionResult) course.sections[sectionIndex] = createPreviewForBlockedElement(section)
-        else {
-          await Promise.all(section.content.map(async (content, contentIndex) => {
+        await Promise.all(section.content.map(async (content, contentIndex) => {
+          if (!sectionResult) {
+            section.content[contentIndex] = createPreviewForBlockedElement(content)
+          } else
             await checkElementRequirments(content, section, user, "content")
               .then(contentResult => {
                 if (!contentResult) section.content[contentIndex] = createPreviewForBlockedElement(content)
               })
-          }))
-        }
+        }))
       });
   }));
+}
+
+async function checkCourseArrayRequirments(courses, user) {
+  await Promise.all(courses.map(async course => {
+    await checkRequirments(course, user).then(async () => { })
+  }))
 }
 
 function addStudent(element, userId, status) {
@@ -194,8 +207,6 @@ app.get("/api/courses/get/:courseId", (req, res) => {
       }
     } else res.status(404).send("Курс не найден")
   })
-
-  // res.send("123")
 })
 
 /**
@@ -346,7 +357,7 @@ app.post("/api/courses/contents/:contentId/answer", mustAuthenticated, (req, res
                 if (!err) changeUserStatusInCourseContent(req, res)
                 else res.status(500).send("Ошибка при сохранении")
               });
-              
+
             } else {
               console.log(err)
               res.status(500).send("Ошибка при загрузке файла")

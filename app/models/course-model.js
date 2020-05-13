@@ -45,6 +45,9 @@ let ContentSchema = new mongoose.Schema({
     target: {
       $type: mongoose.Types.ObjectId
     }
+  },
+  deadline: {
+    $type: Date
   }
 }, { typeKey: '$type' })
 let Content = mongoose.model('Content', ContentSchema);
@@ -75,6 +78,9 @@ let SectionSchema = new mongoose.Schema({
     target: {
       $type: mongoose.Types.ObjectId
     }
+  },
+  deadline: {
+    $type: Date
   }
 }, { typeKey: '$type' })
 let Section = mongoose.model('Section', SectionSchema);
