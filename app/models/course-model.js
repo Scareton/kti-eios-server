@@ -8,12 +8,18 @@ let ContentSchema = new mongoose.Schema({
     required: [true, "nameRequired"],
   },
   type: {
-    $type: String,
+    $type: Number,
     required: [true, "typeRequired"],
+  },
+  taskDT: {
+    $type: Array
   },
   description: {
     $type: String,
     required: [true, "contentRequired"]
+  },
+  content: {
+    $type: String
   },
   students: [
     {
@@ -24,15 +30,22 @@ let ContentSchema = new mongoose.Schema({
       s: {
         $type: Number,
         required: [true, "studentStatusRequired"]
+      },
+      a: {
+        p: {
+          $type: String
+        },
+        s: {
+          $type: Number
+        }
       }
     }
   ],
-  req: [{
+  req: {
     target: {
-      $type: mongoose.Types.ObjectId,
-      required: [true, "reqTargetRequired"]
+      $type: mongoose.Types.ObjectId
     }
-  }]
+  }
 }, { typeKey: '$type' })
 let Content = mongoose.model('Content', ContentSchema);
 
@@ -58,12 +71,11 @@ let SectionSchema = new mongoose.Schema({
     }
   ],
   content: [ContentSchema],
-  req: [{
+  req: {
     target: {
-      $type: mongoose.Types.ObjectId,
-      required: [true, "reqTargetRequired"]
+      $type: mongoose.Types.ObjectId
     }
-  }]
+  }
 }, { typeKey: '$type' })
 let Section = mongoose.model('Section', SectionSchema);
 

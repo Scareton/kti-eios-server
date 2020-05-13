@@ -1,4 +1,7 @@
 const express = require("express")
+// let morgan = require('morgan')
+// let path = require('path')
+// let fs = require('fs')
 const passport = require("passport")
 const LocalStrategy = require('passport-local').Strategy;
 const mongoose = require("mongoose")
@@ -8,9 +11,12 @@ const config = require("./config/index")
 
 const bodyParser = require('body-parser');
 
-var app = express();
+let app = express();
 
-var cors = require('cors')
+// let accessLogStream = fs.createWriteStream(path.join(__dirname, 'access.log'), { flags: 'a' })
+// app.use(morgan('combined', { stream: accessLogStream }))
+
+let cors = require('cors')
 app.use(cors())
 
 app.use(bodyParser.json());
