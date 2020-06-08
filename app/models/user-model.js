@@ -59,27 +59,18 @@ let UserSchema = new mongoose.Schema({
       }
     },
     group: {
-      name: {
-        type: String,
-        required: [true, "studentGroupNameRequired"]
-      },
-      alias: {
-        type: String,
-        required: [true, "studentGroupAliasRequired"]
-      }
+      $type: mongoose.Types.ObjectId
     }
   },
   teacher: {
+    courses: [
+      {
+        $type: mongoose.Types.ObjectId
+      }
+    ],
     disciplines: [
       {
-        name: {
-          type: String,
-          required: [true, "disciplineNameRequired"]
-        },
-        url: {
-          type: String,
-          required: [true, "disciplineUrlRequired"]
-        }
+        $type: mongoose.Types.ObjectId
       }
     ]
   },

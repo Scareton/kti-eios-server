@@ -7,11 +7,13 @@ let path = require('path')
 let mkdirp = require('mkdirp');
 
 const CourseModel = require('../models/course-model')
+const UserModel = require('../models/user-model')
 const CategoryModel = require("../models/category-model")
 const LevelModel = require("../models/level-model")
 const FacultyModel = require("../models/faculty-model")
 const InstituteModel = require("../models/institute-model")
 const DisciplineModel = require("../models/discipline-model")
+const GroupModel = require("../models/group-model")
 
 let targetStatuses = {
   "sections": 6,
@@ -19,11 +21,23 @@ let targetStatuses = {
   2: 5
 }
 
-/**
- * Получить список курсов
- */
-app.get("/api/courses", (req, res) => {
+
+/** Получить курсы */
+app.get("/api/courses", mustAuthenticated, (req, res) => {
+  let match;
+  if (req.user.role === 1) {
+    match = { groups: req.user.student.group }
+  }
+  else if (req.user.role === 2) {
+    match = { _id: { $in: req.user.teacher.courses } }
+  }
+  else {
+    res.status(500).send("Неопознанная роль")
+  }
   CourseModel.aggregate([
+    {
+      $match: match
+    },
     {
       $lookup: {
         from: 'disciplines',
@@ -47,36 +61,66 @@ app.get("/api/courses", (req, res) => {
       $unwind: "$discipline"
     }
   ]).exec((err, courses) => {
-    // Аггрегация возвращает массив с одним элементом.
-    // Получить нужный курс, выбрав первый элемент массива
     if (!err && courses[0]) {
-      let filtered = [];
-
-      checkCourseArrayRequirments(courses, req.user).then(() => {
+      if (req.user.role === 1) {
+        checkCourseArrayRequirments(courses, req.user).then(() => {
+          res.send(courses)
+        })
+      } else if (req.user.role === 2) {
         res.send(courses)
-      })
+      }
 
-
-      // courses.forEach(course => {
-      //   // Отфильтровать секции курса
-      //   if (req.user && req.user.role === 2) {
-      //     console.log("push")
-      //     filtered.push(course)
-      //   } else {
-      //     checkRequirments(course, req.user).then(() => {
-      //       console.log("push req")
-      //       filtered.push(course)
-      //     })
-      //   }
-      // })
-
-    } else res.status(404).send("Курс не найден")
+    } else {
+      console.log(err)
+      res.status(500).send("Ошибка при получении группы")
+    }
   })
 })
 
-/**
- * Проверить требования для получения секции или вложения
- */
+/** Получить данные об академических группах */
+app.get("/api/groups", mustAuthenticated, (req, res) => {
+  let ids;
+
+  // Получить группу студента
+  if (req.user.role === 1) {
+    ids = [req.user.student.group]
+  }
+
+  // Получить группы для преподавателя
+  else if (req.user.role === 2) {
+    if (typeof req.query.id == 'string') {
+      ids = [req.query.id];
+    } else ids = req.query.id;
+    ids = ids.map(g => mongoose.Types.ObjectId(g))
+  }
+
+  // Если статус неизвестен
+  else res.status(500).send("Неверная роль")
+
+  // Запрос в базу
+  GroupModel.aggregate([
+    {
+      $match: {
+        _id: { $in: ids }
+      }
+    }
+  ]).exec((err, groups) => {
+    if (!err && groups[0]) {
+      res.send(groups)
+    } else res.status(500).send("Ошибка при получении академических групп")
+  })
+})
+
+/** Получить студентов группы */
+app.get("/api/groups/:groupId/members", mustAuthenticated, (req, res) => {
+  let groupId = req.params.groupId;
+  UserModel.find({ "student.group": mongoose.Types.ObjectId(groupId) }, { _id: 1, name: 1, surname: 1, patronymic: 1 }, (err, users) => {
+    if (!err) res.send(users)
+    else res.status(500).send("Ошибка при получении информации о студентах")
+  })
+})
+
+/** Проверить требования для получения секции или вложения */
 function checkElementRequirments(element, parent, user, type) {
   return new Promise((resolve, reject) => {
     // Проверка, есть ли у элемента требования
@@ -139,7 +183,7 @@ async function checkCourseArrayRequirments(courses, user) {
   }))
 }
 
-function addStudent(element, userId, status) {
+function addStudent(element, userId, status, rate) {
   // Найти текущего пользователя в элементе
   let student = element.students.find(item => item._id.equals(userId));
 
@@ -149,9 +193,15 @@ function addStudent(element, userId, status) {
   }
   // Если пользователь уже есть в списке - установить статус
   else {
+    // Если указана оценка - значит изменения вносит преподаватель. 
+    // Применить изменения в любом случае
+    if (rate !== undefined) {
+      student.s = status;
+      student.a.s = rate;
+    } 
     // Если существующий статус не выше устанавливаемого
     // Или если неверный ответ исправляется на вновь отправленный
-    if (student.s < status || (student.s === 4 && status === 3)) {
+    else if (student.s < status || (student.s === 4 && status === 3)) {
       student.s = status
     }
   }
@@ -215,37 +265,56 @@ app.get("/api/courses/get/:courseId", (req, res) => {
  */
 function changeUserStatusInCourseContent(req, res) {
   let status = req.body.status;
-  CourseModel.findOne({ "sections.content._id": req.params.contentId }, (err, course) => {
-    if (!err && course !== null) {
-      // Найти указанное вложение
-      let parentSection;
-      new Promise(resolve => {
-        course.sections.forEach(section => {
-          let content = section.content.find(item => item._id.equals(req.params.contentId));
-          if (content !== undefined) {
-            parentSection = section;
-            resolve(content)
-          }
-        })
-      }).then(content => {
-        // Проверить требования
-        checkElementRequirments(content, parentSection, req.user, "content").then(reqResult => {
-          if (reqResult) {
-            addStudent(content, req.user._id, status)
+  let user;
+  let rate = req.body.rate;
 
-            // Сохранить ресурс
-            course.save(err => {
-              if (!err) res.redirect(`/api/courses/get/${course._id}`)
-              else {
-                console.log(err)
-                res.status(500).send("Ошибка при сохранении");
-              }
-            })
-          } else res.status(500).send("Не выполнены все условия")
-        })
+  new Promise((resolve, reject) => {
+    if (req.user.role === 1) resolve(req.user)
+    else {
+      UserModel.findOne({ _id: req.body.user }, (err, dbuser) => {
+        if (!err && dbuser !== null) {
+          if (status === 5 && !rate) reject("Работа оценена, но не был указан рейтинг")
+          resolve(dbuser)
+        }
+        else reject("Студент не найден")
       })
     }
-    else res.status(404).send("Курс не найден")
+  }).then(response => {
+    user = response;
+    CourseModel.findOne({ "sections.content._id": req.params.contentId }, (err, course) => {
+      if (!err && course !== null) {
+        // Найти указанное вложение
+        let parentSection;
+        new Promise(resolve => {
+          course.sections.forEach(section => {
+            let content = section.content.find(item => item._id.equals(req.params.contentId));
+            if (content !== undefined) {
+              parentSection = section;
+              resolve(content)
+            }
+          })
+        }).then(content => {
+          // Проверить требования
+          checkElementRequirments(content, parentSection, user, "content").then(reqResult => {
+            if (reqResult) {
+              addStudent(content, user._id, status, rate)
+
+              // Сохранить ресурс
+              course.save(err => {
+                if (!err) res.redirect(`/api/courses/get/${course._id}`)
+                else {
+                  console.log(err)
+                  res.status(500).send(course);
+                }
+              })
+            } else res.status(500).send("Не выполнены все условия")
+          })
+        })
+      }
+      else res.status(404).send("Курс не найден")
+    })
+  }).catch(err => {
+    res.status(404).send(err)
   })
 }
 
@@ -289,7 +358,10 @@ function updateUserStatusInCourseSection(req, res) {
             console.log("Раздел открыт")
             res.send(course)
           }
-          else res.status(500).send("Ошибка при сохранении")
+          else {
+            console.log(err)
+            res.status(500).send("Ошибка при сохранении")
+          }
         })
 
       } else res.status(404).send("Раздел не найден")
@@ -380,5 +452,5 @@ app.post("/api/courses/contents/:contentId/answer", mustAuthenticated, (req, res
 })
 
 app.get("/api/uploads/courses/:courseId/answers/:contentId/:filename", mustAuthenticated, (req, res) => {
-
+  res.sendFile(`${path.dirname(require.main.filename)}/uploads/courses/${req.params.courseId}/answers/${req.params.contentId}/${req.params.filename}`)
 })

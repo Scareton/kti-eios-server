@@ -1,7 +1,6 @@
 let mongoose = require('mongoose');
 
 // КОНТЕНТ (Вложения в курс)
-// TODO сортировка вложений (order)
 let ContentSchema = new mongoose.Schema({
   name: {
     $type: String,
